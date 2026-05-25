@@ -10,6 +10,8 @@ const DAY_NAMES = [
   'Thursday','Friday','Saturday'
 ]
 
+const BASE_URL = "https://sod-bill-generator.onrender.com";
+
 function minutesToTime(mins) {
   const h = Math.floor(mins / 60)
   const m = mins % 60
@@ -164,7 +166,7 @@ export default function GenerateSection({
     setError(null)
 
     try {
-      const res = await fetch('/api/generate-schedule', {
+      const res = await fetch(`${BASE_URL}/api/generate-schedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -197,7 +199,7 @@ export default function GenerateSection({
     setError(null)
 
     try {
-      const res = await fetch('/api/generate-bills', {
+      const res = await fetch(`${BASE_URL}/api/generate-bills`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
