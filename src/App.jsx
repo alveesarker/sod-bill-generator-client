@@ -6,6 +6,7 @@ import ClassScheduleForm from './components/ClassScheduleForm.jsx'
 import GenerateSection from './components/GenerateSection.jsx'
 import Header from './components/Header.jsx'
 import StepNav from './components/StepNav.jsx'
+import { exportSession, importSession } from './session.js' // ← ADD this import
 
 const STEPS = [
   { id: 1, label: 'Student Info' },
@@ -26,9 +27,7 @@ const defaultStudent = {
 }
 
 const defaultSupervisor = () => ({ name: '', hoursPerWeek: 9 })
-
 const defaultWeekDates = () => ({ 1: [], 2: [], 3: [], 4: [] })
-
 const defaultCourse = () => ({ dayCode: 'M', startTime: '08:00', endTime: '09:30' })
 
 export default function App() {
@@ -39,8 +38,8 @@ export default function App() {
   const [courses, setCourses] = useState([])
   const [templateFile, setTemplateFile] = useState(null)
   const [errors, setErrors] = useState({})
+  const [importError, setImportError] = useState('') // ← ADD
 
-  // Sync supervisors count with numBills
   const handleStudentChange = (updates) => {
     const next = { ...student, ...updates }
     setStudent(next)
@@ -52,6 +51,33 @@ export default function App() {
         return arr.slice(0, n)
       })
     }
+  }
+
+  // ← ADD: Export handler
+  const handleExport = () => {
+    exportSession({ student, supervisors, weekDates, courses })
+  }
+
+  // ← ADD: Import handler
+  const handleImport = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setImportError('')
+
+    try {
+      const data = await importSession(file)
+
+      setStudent(data.student || defaultStudent)
+      setSupervisors(data.supervisors || [defaultSupervisor()])
+      setWeekDates(data.weekDates || defaultWeekDates())
+      setCourses(data.courses || [])
+      setErrors({})
+      setStep(3) // ← Land on Working Dates so user updates eligible dates for new month
+    } catch (err) {
+      setImportError(err.message)
+    }
+
+    e.target.value = '' // reset input so same file can be re-imported
   }
 
   const validateStep = () => {
@@ -68,7 +94,6 @@ export default function App() {
         if (!s.hoursPerWeek || s.hoursPerWeek < 1) errs[`sup_hours_${i}`] = 'Hours must be ≥ 1'
         if (s.hoursPerWeek > 20) errs[`sup_hours_${i}`] = 'Hours cannot exceed 20'
       })
-      // Check combined
       const total = supervisors.reduce((sum, s) => sum + Number(s.hoursPerWeek || 0), 0)
       if (total > 20) errs.combined = `Combined weekly hours (${total}) exceed maximum of 20`
     }
@@ -90,6 +115,33 @@ export default function App() {
       <Header />
       <div className="flex-1 max-w-5xl mx-auto w-full px-4 py-8">
         <StepNav steps={STEPS} current={step} onStepClick={setStep} />
+
+        {/* ← ADD: Session save/load bar — sits just below StepNav */}
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          <span className="text-sm text-gray-500">Session:</span>
+
+          <button
+            onClick={handleExport}
+            className="btn-secondary text-sm"
+          >
+            💾 Save session
+          </button>
+
+          <label className="btn-secondary text-sm cursor-pointer">
+            📂 Load session
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleImport}
+              className="hidden"
+            />
+          </label>
+
+          {importError && (
+            <span className="text-sm text-red-500">{importError}</span>
+          )}
+        </div>
+        {/* ← END ADD */}
 
         <div className="mt-8 animate-fadein">
           {step === 1 && (
@@ -133,7 +185,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Nav buttons */}
         {step < 5 && (
           <div className="mt-8 flex justify-between">
             <button

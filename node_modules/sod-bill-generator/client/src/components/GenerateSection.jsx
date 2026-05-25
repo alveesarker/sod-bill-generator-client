@@ -450,7 +450,7 @@ export default function GenerateSection({
                   <>
                     <span className="animate-spin">⟳</span>
                     {' '}
-                    Generating DOCX Files...
+                    Generating PDF Files...
                   </>
                 ) : (
                   <>
