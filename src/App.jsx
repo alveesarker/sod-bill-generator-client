@@ -7,6 +7,7 @@ import GenerateSection from './components/GenerateSection.jsx'
 import Header from './components/Header.jsx'
 import StepNav from './components/StepNav.jsx'
 import { exportSession, importSession } from './session.js' // ← ADD this import
+import Footer from './components/Footer.jsx'  // ← ADD
 
 const STEPS = [
   { id: 1, label: 'Student Info' },
@@ -205,6 +206,7 @@ export default function App() {
           </div>
         )}
       </div>
+      <Footer/>
     </div>
   )
 }
