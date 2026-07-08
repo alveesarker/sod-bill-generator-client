@@ -1,169 +1,251 @@
-const MONTH_NAMES = ['January','February','March','April','May','June',
-  'July','August','September','October','November','December']
+import { useEffect, useState } from 'react'
+import ImageExtract from './ImageExtract.jsx'
+import { MONTH_NAMES, DAY_NAMES_SHORT, daysInMonth, weekdayOf } from '../lib/format.js'
+import { parseWeekDatesFromText } from '../lib/scheduleParsers.js'
+import { fetchSharedDates } from '../lib/api.js'
 
-function getDaysInMonth(month, year) {
-  return new Date(year, month, 0).getDate()
-}
+// Visual identity for the four week panels.
+const WEEK_STYLES = [
+  {
+    panel: 'bg-brand-soft border-brand/25 hover:border-brand/50',
+    text: 'text-brand-dark',
+    selected: 'bg-brand text-white',
+  },
+  {
+    panel: 'bg-plum-soft border-plum/25 hover:border-plum/50',
+    text: 'text-plum',
+    selected: 'bg-plum text-white',
+  },
+  {
+    panel: 'bg-cyan-50 border-cyan-200 hover:border-cyan-400',
+    text: 'text-cyan-700',
+    selected: 'bg-cyan-600 text-white',
+  },
+  {
+    panel: 'bg-rose-50 border-rose-200 hover:border-rose-400',
+    text: 'text-rose-600',
+    selected: 'bg-rose-500 text-white',
+  },
+]
 
-function getDayName(year, month, day) {
-  const names = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
-  return names[new Date(year, month - 1, day).getDay()]
-}
+export default function WeekDateSelector({
+  month,
+  year,
+  weekDates,
+  onChange,
+  onExtracted,
+  onUseShared,
+  errors,
+}) {
+  const totalDays = daysInMonth(month, year)
 
-export default function WeekDateSelector({ month, year, weekDates, onChange, errors }) {
-  const totalDays = getDaysInMonth(month, year)
+  // Dates another student already extracted for this month, if any.
+  const [shared, setShared] = useState(null)
+  const [sharedApplied, setSharedApplied] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    setShared(null)
+    setSharedApplied(false)
+    fetchSharedDates(year, month).then((entry) => {
+      if (!cancelled) setShared(entry)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [year, month])
+
+  const useShared = () => {
+    onUseShared({ month, year, weekDates: shared.weekDates })
+    setSharedApplied(true)
+  }
+
+  const sharedCount = shared
+    ? Object.values(shared.weekDates).reduce((n, arr) => n + arr.length, 0)
+    : 0
+
+  const handleTexts = async (texts) => {
+    // OCR variants fail by LOSING days (glued digits), not inventing them,
+    // so of the variants that parsed at all, keep the one that recovered
+    // the most days. Month/year fall back to any variant that saw them.
+    let best = null
+    let bestCount = -1
+    let month = null
+    let year = null
+    for (const text of texts) {
+      const parsed = parseWeekDatesFromText(text)
+      month = month || parsed.month
+      year = year || parsed.year
+      if (!parsed.weekDates) continue
+      const count = Object.values(parsed.weekDates).reduce((n, arr) => n + arr.length, 0)
+      if (count > bestCount) {
+        best = parsed
+        bestCount = count
+      }
+    }
+    if (best) {
+      return onExtracted({ ...best, month: best.month || month, year: best.year || year })
+    }
+    throw new Error(
+      'No "Week 1/2/3/4" lists found. Make sure the message text is readable in the screenshot.'
+    )
+  }
   const allDays = Array.from({ length: totalDays }, (_, i) => i + 1)
+  const assigned = new Set(Object.values(weekDates).flat())
 
   const toggleDate = (week, day) => {
-    const current = weekDates[week] || []
-    const isIn = current.includes(day)
-
-    // Remove from other weeks first
-    const cleaned = {}
+    // A date may belong to at most one week, so remove it everywhere first.
+    const wasSelected = (weekDates[week] || []).includes(day)
+    const next = {}
     for (let w = 1; w <= 4; w++) {
-      cleaned[w] = (weekDates[w] || []).filter(d => d !== day)
+      next[w] = (weekDates[w] || []).filter((d) => d !== day)
     }
-
-    if (!isIn) {
-      cleaned[week] = [...cleaned[week], day].sort((a, b) => a - b)
+    if (!wasSelected) {
+      next[week] = [...next[week], day].sort((a, b) => a - b)
     }
-
-    onChange(cleaned)
+    onChange(next)
   }
 
-  const clearWeek = (week) => {
-    onChange({ ...weekDates, [week]: [] })
-  }
-
-  const weekColors = ['gold', 'violet', 'cyan', 'rose']
-  const weekBgs = [
-    'bg-gold-500/10 border-gold-500/20 hover:border-gold-500/40',
-    'bg-violet-500/10 border-violet-500/20 hover:border-violet-500/40',
-    'bg-cyan-500/10 border-cyan-500/20 hover:border-cyan-500/40',
-    'bg-rose-500/10 border-rose-500/20 hover:border-rose-500/40',
-  ]
-  const weekTextColors = ['text-gold-400', 'text-violet-400', 'text-cyan-400', 'text-rose-400']
-  const weekSelectedBgs = [
-    'bg-gold-500 text-ink-950',
-    'bg-violet-500 text-white',
-    'bg-cyan-500 text-ink-950',
-    'bg-rose-500 text-white',
-  ]
-
-  // Figure out which dates are assigned to any week
-  const assignedDates = new Set(Object.values(weekDates).flat())
+  const clearWeek = (week) => onChange({ ...weekDates, [week]: [] })
 
   return (
-    <div className="space-y-4">
-      <div className="card">
-        <div className="card-header">
-          <div className="flex items-center gap-3">
-            <div className="step-indicator bg-gold-500/20 text-gold-400 border border-gold-500/30">3</div>
-            <div>
-              <h2 className="section-title">Eligible Working Dates</h2>
-              <p className="text-xs text-ink-500 mt-0.5">
-                {MONTH_NAMES[month - 1]} {year} · Manually assign dates to each week
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="p-6">
-          <div className="bg-ink-800/50 border border-amber-500/20 rounded-xl p-4 mb-6 text-xs text-amber-300/80">
-            ⚠️ <strong>Important:</strong> Weeks are NOT calendar weeks. Assign dates manually as your department defines them. 
-            Dates can be non-consecutive. A date can only belong to one week.
-          </div>
-
-          {errors.weekDates && (
-            <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 text-rose-400 text-sm mb-4">
-              {errors.weekDates}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {[1, 2, 3, 4].map(wk => {
-              const selected = weekDates[wk] || []
-              const wkIdx = wk - 1
-              return (
-                <div key={wk} className={`rounded-xl border p-4 ${weekBgs[wkIdx]}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className={`font-semibold text-sm ${weekTextColors[wkIdx]}`}>
-                      Week {wk}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className={`badge ${weekSelectedBgs[wkIdx]} text-xs`}>
-                        {selected.length} dates
-                      </span>
-                      {selected.length > 0 && (
-                        <button
-                          onClick={() => clearWeek(wk)}
-                          className="text-xs text-ink-500 hover:text-ink-300 transition-colors"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-7 gap-1">
-                    {allDays.map(day => {
-                      const isSelected = selected.includes(day)
-                      const isOtherWeek = !isSelected && assignedDates.has(day)
-                      const dayName = getDayName(year, month, day)
-                      return (
-                        <button
-                          key={day}
-                          onClick={() => !isOtherWeek && toggleDate(wk, day)}
-                          disabled={isOtherWeek}
-                          title={`${day} ${MONTH_NAMES[month-1]} (${dayName})`}
-                          className={`relative aspect-square flex items-center justify-center rounded-lg text-xs font-mono font-medium transition-all duration-150 ${
-                            isSelected
-                              ? weekSelectedBgs[wkIdx]
-                              : isOtherWeek
-                                ? 'opacity-25 cursor-not-allowed text-ink-600'
-                                : 'hover:bg-white/10 text-ink-400 hover:text-ink-200'
-                          }`}
-                        >
-                          {day}
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {selected.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-white/10">
-                      <div className="flex flex-wrap gap-1">
-                        {selected.map(d => (
-                          <span key={d} className={`badge ${weekSelectedBgs[wkIdx]} font-mono text-xs`}>
-                            {String(d).padStart(2,'0')} {getDayName(year, month, d)}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Summary */}
-          <div className="mt-5 bg-ink-800/50 rounded-xl p-4 border border-ink-700">
-            <h3 className="text-xs font-semibold text-ink-400 uppercase tracking-wider mb-2">Date Assignment Summary</h3>
-            <div className="flex flex-wrap gap-2">
-              {[1,2,3,4].map(wk => (
-                <div key={wk} className={`text-xs px-3 py-1.5 rounded-lg border ${weekBgs[wk-1]}`}>
-                  <span className={weekTextColors[wk-1]}>Week {wk}</span>
-                  <span className="text-ink-500 ml-1">
-                    {(weekDates[wk]||[]).length > 0 
-                      ? (weekDates[wk]||[]).join(', ')
-                      : 'No dates'}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-ink-600 mt-2">
-              Total assigned: {assignedDates.size} / {totalDays} days
+    <div className="card">
+      <div className="card-header">
+        <div className="flex items-center gap-3">
+          <span className="step-dot bg-brand-soft text-brand-dark border border-brand/30">4</span>
+          <div>
+            <h2 className="section-title">Eligible Working Dates</h2>
+            <p className="text-xs text-ink-500 mt-0.5">
+              {MONTH_NAMES[month - 1]} {year} &middot; Assign dates to each week
             </p>
           </div>
+        </div>
+      </div>
+
+      <div className="p-6">
+        <div className="mb-5">
+          <ImageExtract
+            title="Fill from a screenshot"
+            hint='Upload the announcement message &mdash; lines like "Week 1 : 1,2,3,4,5,6" fill the grids, and a month header like "JUNE 2026" sets the month automatically.'
+            onTexts={handleTexts}
+          />
+        </div>
+
+        {shared && (
+          <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4 mb-6 flex items-center gap-3 flex-wrap">
+            <div className="flex-1 min-w-[14rem] text-xs text-cyan-700">
+              <strong>
+                Shared dates available for {MONTH_NAMES[month - 1]} {year}:
+              </strong>{' '}
+              another student already uploaded this month&rsquo;s announcement ({sharedCount}{' '}
+              date{sharedCount === 1 ? '' : 's'}, saved{' '}
+              {new Date(shared.updatedAt).toLocaleDateString()}) &mdash; no screenshot needed.
+            </div>
+            {sharedApplied ? (
+              <span className="text-xs font-semibold text-cyan-700">
+                &#10003; Applied &mdash; review the grids below
+              </span>
+            ) : (
+              <button type="button" className="btn-secondary text-sm" onClick={useShared}>
+                Use these dates
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="bg-brand-soft border border-brand/25 rounded-xl p-4 mb-6 text-xs text-ink-700">
+          <strong>Note:</strong> weeks here are billing weeks, not calendar weeks. Assign dates
+          the way your department defines them &mdash; they can be non-consecutive, and each date
+          can belong to only one week.
+        </div>
+
+        {errors.weekDates && (
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-rose-500 text-sm mb-4">
+            {errors.weekDates}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {[1, 2, 3, 4].map((wk) => {
+            const style = WEEK_STYLES[wk - 1]
+            const selected = weekDates[wk] || []
+            return (
+              <div key={wk} className={`rounded-xl border p-4 transition-colors ${style.panel}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className={`font-semibold text-sm ${style.text}`}>Week {wk}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`badge ${style.selected}`}>{selected.length} dates</span>
+                    {selected.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => clearWeek(wk)}
+                        className="text-xs text-ink-500 hover:text-ink-900 transition-colors"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-7 gap-1">
+                  {allDays.map((day) => {
+                    const isSelected = selected.includes(day)
+                    const inOtherWeek = !isSelected && assigned.has(day)
+                    const dayName = DAY_NAMES_SHORT[weekdayOf(year, month, day)]
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        disabled={inOtherWeek}
+                        onClick={() => toggleDate(wk, day)}
+                        title={`${day} ${MONTH_NAMES[month - 1]} (${dayName})`}
+                        className={`aspect-square flex items-center justify-center rounded-lg text-xs font-mono font-medium transition-all duration-150 ${
+                          isSelected
+                            ? style.selected
+                            : inOtherWeek
+                              ? 'opacity-25 cursor-not-allowed text-ink-500'
+                              : 'text-ink-600 hover:bg-white/70 hover:text-ink-900'
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {selected.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-ink-900/10 flex flex-wrap gap-1">
+                    {selected.map((d) => (
+                      <span key={d} className={`badge font-mono ${style.selected}`}>
+                        {String(d).padStart(2, '0')} {DAY_NAMES_SHORT[weekdayOf(year, month, d)]}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-5 bg-cream/60 rounded-xl p-4 border border-ink-200">
+          <h3 className="text-xs font-semibold text-ink-600 uppercase tracking-wider mb-2">
+            Date Assignment Summary
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {[1, 2, 3, 4].map((wk) => (
+              <div
+                key={wk}
+                className={`text-xs px-3 py-1.5 rounded-lg border ${WEEK_STYLES[wk - 1].panel}`}
+              >
+                <span className={WEEK_STYLES[wk - 1].text}>Week {wk}</span>
+                <span className="text-ink-500 ml-1">
+                  {(weekDates[wk] || []).length > 0 ? (weekDates[wk] || []).join(', ') : 'No dates'}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-ink-400 mt-2">
+            Total assigned: {assigned.size} / {totalDays} days
+          </p>
         </div>
       </div>
     </div>

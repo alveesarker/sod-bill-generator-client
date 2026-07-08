@@ -1,129 +1,154 @@
-export default function SupervisorForm({ supervisors, onChange, errors }) {
-  const combinedHours = supervisors.reduce((s, sup) => s + Number(sup.hoursPerWeek || 0), 0)
-  const overLimit = combinedHours > 20
+const MAX_COMBINED = 20
 
-  const update = (i, key, value) => {
-    const next = [...supervisors]
-    next[i] = { ...next[i], [key]: value }
+export default function SupervisorForm({ supervisors, onChange, errors }) {
+  const combined = supervisors.reduce((sum, s) => sum + Number(s.hoursPerWeek || 0), 0)
+  const overLimit = combined > MAX_COMBINED
+
+  const update = (i, patch) => {
+    const next = supervisors.map((s, idx) => (idx === i ? { ...s, ...patch } : s))
     onChange(next)
   }
 
   return (
-    <div className="space-y-4">
-      <div className="card">
-        <div className="card-header">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="step-indicator bg-gold-500/20 text-gold-400 border border-gold-500/30">2</div>
-              <div>
-                <h2 className="section-title">Supervisor Details</h2>
-                <p className="text-xs text-ink-500 mt-0.5">Configure each supervisor and their weekly hour allocation</p>
-              </div>
-            </div>
-            <div className={`badge ${overLimit ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30' : 'bg-jade-500/15 text-jade-400 border border-jade-500/30'}`}>
-              Combined: {combinedHours} / 20 hrs/wk
+    <div className="card">
+      <div className="card-header">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <span className="step-dot bg-brand-soft text-brand-dark border border-brand/30">2</span>
+            <div>
+              <h2 className="section-title">Supervisor Details</h2>
+              <p className="text-xs text-ink-500 mt-0.5">
+                Name each supervisor and set their weekly hours
+              </p>
             </div>
           </div>
+          <span
+            className={`badge border ${
+              overLimit
+                ? 'bg-rose-50 text-rose-500 border-rose-200'
+                : 'bg-plum-soft text-plum border-plum/30'
+            }`}
+          >
+            Combined: {combined} / {MAX_COMBINED} hrs/wk
+          </span>
         </div>
-        <div className="p-6 space-y-4">
-          {supervisors.map((sup, i) => (
-            <div key={i} className="bg-ink-800 rounded-xl p-5 border border-ink-700">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-6 h-6 rounded-lg bg-gold-500/20 flex items-center justify-center">
-                  <span className="text-gold-400 font-mono text-xs font-bold">{i + 1}</span>
-                </div>
-                <span className="text-sm font-semibold text-ink-300">Supervisor {i + 1}</span>
+      </div>
+
+      <div className="p-6 space-y-4">
+        {supervisors.map((sup, i) => (
+          <div key={i} className="bg-cream/60 rounded-xl p-5 border border-ink-200">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="w-6 h-6 rounded-lg bg-brand-soft text-brand-dark font-mono text-xs font-bold flex items-center justify-center">
+                {i + 1}
+              </span>
+              <span className="text-sm font-semibold text-ink-700">Supervisor {i + 1}</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="label" htmlFor={`sup-name-${i}`}>
+                  Supervisor Name
+                </label>
+                <input
+                  id={`sup-name-${i}`}
+                  type="text"
+                  value={sup.name}
+                  placeholder="e.g. Dr. Jane Doe"
+                  onChange={(e) => update(i, { name: e.target.value })}
+                  className={`input-field ${errors[`sup_name_${i}`] ? 'border-rose-400' : ''}`}
+                />
+                {errors[`sup_name_${i}`] && (
+                  <p className="error-text">{errors[`sup_name_${i}`]}</p>
+                )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Supervisor Name</label>
+
+              <div>
+                <label className="label" htmlFor={`sup-hours-${i}`}>
+                  Assigned Hours Per Week
+                </label>
+                <div className="flex items-center gap-3">
                   <input
-                    type="text"
-                    value={sup.name}
-                    onChange={e => update(i, 'name', e.target.value)}
-                    placeholder="e.g. Dr. something"
-                    className={`input-field ${errors[`sup_name_${i}`] ? 'border-rose-500/60' : ''}`}
+                    id={`sup-hours-${i}`}
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={sup.hoursPerWeek}
+                    onChange={(e) => update(i, { hoursPerWeek: Number(e.target.value) })}
+                    className={`input-field w-24 ${errors[`sup_hours_${i}`] ? 'border-rose-400' : ''}`}
                   />
-                  {errors[`sup_name_${i}`] && (
-                    <p className="text-rose-400 text-xs mt-1">{errors[`sup_name_${i}`]}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="label">Assigned Hours Per Week</label>
-                  <div className="flex items-center gap-3">
+                  <div className="flex-1">
                     <input
-                      type="number"
+                      type="range"
                       min={1}
                       max={20}
-                      value={sup.hoursPerWeek}
-                      onChange={e => update(i, 'hoursPerWeek', Number(e.target.value))}
-                      className={`input-field w-24 ${errors[`sup_hours_${i}`] ? 'border-rose-500/60' : ''}`}
+                      value={sup.hoursPerWeek || 1}
+                      onChange={(e) => update(i, { hoursPerWeek: Number(e.target.value) })}
+                      className="w-full accent-brand"
+                      aria-label={`Hours per week for supervisor ${i + 1}`}
                     />
-                    <div className="flex-1">
-                      <input
-                        type="range"
-                        min={1}
-                        max={20}
-                        value={sup.hoursPerWeek}
-                        onChange={e => update(i, 'hoursPerWeek', Number(e.target.value))}
-                        className="w-full accent-gold-500"
-                      />
-                      <div className="flex justify-between text-xs text-ink-600 mt-0.5">
-                        <span>1</span><span>10</span><span>20</span>
-                      </div>
+                    <div className="flex justify-between text-xs text-ink-400 mt-0.5">
+                      <span>1</span>
+                      <span>10</span>
+                      <span>20</span>
                     </div>
                   </div>
-                  {errors[`sup_hours_${i}`] && (
-                    <p className="text-rose-400 text-xs mt-1">{errors[`sup_hours_${i}`]}</p>
-                  )}
                 </div>
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <div className="text-xs text-ink-500">
-                  Max monthly total from this supervisor:{' '}
-                  <span className="text-ink-300 font-mono">{sup.hoursPerWeek * 4} hours</span>
-                </div>
+                {errors[`sup_hours_${i}`] && (
+                  <p className="error-text">{errors[`sup_hours_${i}`]}</p>
+                )}
               </div>
             </div>
-          ))}
 
-          {errors.combined && (
-            <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-rose-400 text-sm">
-              ⚠️ {errors.combined}
-            </div>
-          )}
+            <p className="mt-3 text-xs text-ink-500">
+              Max monthly total from this supervisor:{' '}
+              <span className="font-mono text-ink-700">
+                {(Number(sup.hoursPerWeek) || 0) * 4} hours
+              </span>
+            </p>
+          </div>
+        ))}
 
-          <div className="bg-ink-800/50 rounded-xl p-4 border border-ink-700">
-            <h3 className="text-xs font-semibold text-ink-400 uppercase tracking-wider mb-3">Weekly Hour Summary</h3>
-            <div className="space-y-2">
-              {supervisors.map((sup, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <span className="text-xs text-ink-500 w-28 truncate">
-                    {sup.name || `Supervisor ${i + 1}`}
-                  </span>
-                  <div className="flex-1 bg-ink-700 rounded-full h-1.5">
-                    <div
-                      className="bg-gold-500 h-1.5 rounded-full transition-all"
-                      style={{ width: `${(sup.hoursPerWeek / 20) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-xs font-mono text-gold-400 w-12 text-right">
-                    {sup.hoursPerWeek} hrs
-                  </span>
-                </div>
-              ))}
-              <div className="flex items-center gap-3 pt-1 border-t border-ink-700 mt-1">
-                <span className="text-xs text-ink-400 font-semibold w-28">Combined</span>
-                <div className="flex-1 bg-ink-700 rounded-full h-1.5">
+        {errors.combined && (
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-500 text-sm">
+            {errors.combined}
+          </div>
+        )}
+
+        <div className="bg-cream/60 rounded-xl p-4 border border-ink-200">
+          <h3 className="text-xs font-semibold text-ink-600 uppercase tracking-wider mb-3">
+            Weekly Hour Summary
+          </h3>
+          <div className="space-y-2">
+            {supervisors.map((sup, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <span className="text-xs text-ink-500 w-28 truncate">
+                  {sup.name || `Supervisor ${i + 1}`}
+                </span>
+                <div className="flex-1 bg-ink-200 rounded-full h-1.5">
                   <div
-                    className={`h-1.5 rounded-full transition-all ${overLimit ? 'bg-rose-500' : 'bg-jade-500'}`}
-                    style={{ width: `${Math.min((combinedHours / 20) * 100, 100)}%` }}
+                    className="bg-brand h-1.5 rounded-full transition-all"
+                    style={{ width: `${((Number(sup.hoursPerWeek) || 0) / MAX_COMBINED) * 100}%` }}
                   />
                 </div>
-                <span className={`text-xs font-mono w-12 text-right ${overLimit ? 'text-rose-400' : 'text-jade-400'}`}>
-                  {combinedHours}/20
+                <span className="text-xs font-mono text-brand-dark w-12 text-right">
+                  {sup.hoursPerWeek} hrs
                 </span>
               </div>
+            ))}
+
+            <div className="flex items-center gap-3 pt-2 border-t border-ink-200">
+              <span className="text-xs font-semibold text-ink-600 w-28">Combined</span>
+              <div className="flex-1 bg-ink-200 rounded-full h-1.5">
+                <div
+                  className={`h-1.5 rounded-full transition-all ${overLimit ? 'bg-rose-500' : 'bg-plum'}`}
+                  style={{ width: `${Math.min((combined / MAX_COMBINED) * 100, 100)}%` }}
+                />
+              </div>
+              <span
+                className={`text-xs font-mono w-12 text-right ${overLimit ? 'text-rose-500' : 'text-plum'}`}
+              >
+                {combined}/{MAX_COMBINED}
+              </span>
             </div>
           </div>
         </div>
