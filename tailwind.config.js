@@ -9,37 +9,32 @@ export default {
         mono: ['"JetBrains Mono"', 'monospace'],
       },
       colors: {
+        cream: '#f2efeb',
         ink: {
-          50: '#1A1A1A',
-          100: '#1A1A1A',
-          200: '#1A1A1A',
-          300: '#1A1A1A',
-          400: '#757575',
+          900: '#1a1a1a',
+          700: '#4a4a4a',
+          600: '#757575',
           500: '#828282',
-          600: '#999999',
-          700: '#999999',
-          800: '#ffffff',
-          900: '#ffffff',
-          950: '#ffffff',
+          400: '#999999',
+          300: '#c4c4c4',
+          200: '#e2e0dc',
+          100: '#efedea',
         },
-        gold: {
-          100: '#f2efeb',
-          300: '#f28f1a',
-          400: '#f28f1a',
-          500: '#f28f1a',
-          600: '#f28f1a',
+        brand: {
+          DEFAULT: '#f28f1a',
+          dark: '#d97c0e',
+          soft: '#fdf1e0',
         },
-        jade: {
-          400: '#6f2c89',
-          500: '#6f2c89',
-          600: '#6f2c89',
+        plum: {
+          DEFAULT: '#6f2c89',
+          soft: '#f3ebf7',
         },
-        rose: {
-          400: '#fb7185',
-          500: '#f43f5e',
-        }
-      }
-    }
+        danger: {
+          DEFAULT: '#f43f5e',
+          soft: '#fff1f2',
+        },
+      },
+    },
   },
-  plugins: []
+  plugins: [],
 }
