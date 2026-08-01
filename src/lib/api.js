@@ -1,6 +1,6 @@
 // Where the API lives: explicit base URL in production builds, or '' so
 // the Vite dev proxy handles /api during development.
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+export const API_BASE = "https://sod-bill-generator-server.onrender.com";
 
 // Shared week-dates store. Every SoD student receives the same
 // departmental announcement, so dates read from an uploaded screenshot
