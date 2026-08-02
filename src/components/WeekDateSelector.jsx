@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import ImageExtract from './ImageExtract.jsx'
 import { MONTH_NAMES, DAY_NAMES_SHORT, daysInMonth, weekdayOf } from '../lib/format.js'
-import { parseWeekDatesFromTexts } from '../lib/scheduleParsers.js'
+import { parseWeekDatesFromText, parseWeekDatesFromTexts } from '../lib/scheduleParsers.js'
 import { fetchSharedDates } from '../lib/api.js'
 
 // Visual identity for the four week panels.
@@ -63,14 +63,39 @@ export default function WeekDateSelector({
     ? Object.values(shared.weekDates).reduce((n, arr) => n + arr.length, 0)
     : 0
 
+  // Reading a screenshot can lose a week the reader could not make out, so
+  // say which ones came back empty rather than reporting a bare total.
+  const applyParsed = (parsed) => {
+    const summary = onExtracted(parsed)
+    const missing = [1, 2, 3, 4].filter((wk) => parsed.weekDates[wk].length === 0)
+    if (missing.length === 0) return summary
+    return `${summary} Week ${missing.join(', ')} came back empty — paste the message text below, or tap those dates in the grid.`
+  }
+
   const handleTexts = async (texts) => {
     // Each week takes the variant that read it best (see the parser): one
     // variant losing a single week no longer loses it for the whole upload.
     const parsed = parseWeekDatesFromTexts(texts)
-    if (parsed.weekDates) return onExtracted(parsed)
+    if (parsed.weekDates) return applyParsed(parsed)
     throw new Error(
       'No "Week 1/2/3/4" lists found. Make sure the message text is readable in the screenshot.'
     )
+  }
+
+  // Pasting the message text skips OCR entirely: chat apps let you copy the
+  // announcement, and copied text is exact where a reading of it is a guess.
+  const [pasted, setPasted] = useState('')
+  const [pasteStatus, setPasteStatus] = useState(null) // {kind:'ok'|'err', text}
+  const applyPasted = () => {
+    const parsed = parseWeekDatesFromText(pasted)
+    if (!parsed.weekDates) {
+      setPasteStatus({
+        kind: 'err',
+        text: 'No "Week 1/2/3/4" lists found in that text. Include the lines as they were sent, e.g. "Week 1 : 1,2,3,4".',
+      })
+      return
+    }
+    setPasteStatus({ kind: 'ok', text: applyParsed(parsed) })
   }
   const allDays = Array.from({ length: totalDays }, (_, i) => i + 1)
   const assigned = new Set(Object.values(weekDates).flat())
@@ -112,6 +137,45 @@ export default function WeekDateSelector({
             onTexts={handleTexts}
           />
         </div>
+
+        <details className="mb-6 rounded-xl border border-ink-200 bg-cream/40 p-4">
+          <summary className="text-sm font-semibold text-ink-900 cursor-pointer">
+            Or paste the message text
+          </summary>
+          <p className="text-xs text-ink-500 mt-1">
+            Copy the announcement in your chat app and paste it here. Reading a screenshot is a
+            guess at the letters; pasted text is exact, so use this whenever a week comes out
+            wrong.
+          </p>
+          <textarea
+            className="input-field mt-3 font-mono text-xs h-32"
+            placeholder={'JUNE 2026\nWeek 1 : 1,2,3,4,5,6\nWeek 2 : 7,8,9,10,11,12,13'}
+            value={pasted}
+            onChange={(e) => {
+              setPasted(e.target.value)
+              setPasteStatus(null)
+            }}
+          />
+          <button
+            type="button"
+            className="btn-secondary mt-3"
+            disabled={!pasted.trim()}
+            onClick={applyPasted}
+          >
+            Fill from text
+          </button>
+          {pasteStatus && (
+            <div
+              className={`mt-3 text-xs rounded-lg px-3 py-2 border ${
+                pasteStatus.kind === 'ok'
+                  ? 'bg-plum-soft text-plum border-plum/25'
+                  : 'bg-rose-50 text-rose-500 border-rose-200'
+              }`}
+            >
+              {pasteStatus.text}
+            </div>
+          )}
+        </details>
 
         {shared && (
           <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4 mb-6 flex items-center gap-3 flex-wrap">

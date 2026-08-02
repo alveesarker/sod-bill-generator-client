@@ -104,8 +104,58 @@ const WEEK_INDEX = { 1: 1, I: 1, L: 1, '|': 1, 2: 2, Z: 2, 3: 3, 4: 4 }
 
 // A standalone 1-2 digit number: "2026" stays a year instead of becoming
 // 20 and 26. Used for unlabelled lines only — inside a "Week N :" list,
-// glued digits ("1213") are still worth splitting.
+// glued digits ("1213") are split by splitRun instead.
 const DAY_RE = /(?<!\d)(\d{1,2})(?!\d)/g
+
+/**
+ * Split a run of digits OCR glued together back into days: "1516" -> 15,16
+ * and "123456" -> 1,2,3,4,5,6. Days in an announcement ascend, so the
+ * segmentation must ascend too; among those, the fewest pieces wins ("1516"
+ * is 15,16 rather than 1,5,16). Returns null when nothing fits.
+ */
+function splitRun(run, maxDay, after) {
+  const memo = new Map()
+  const best = (i, prev) => {
+    if (i === run.length) return []
+    const key = `${i}|${prev}`
+    if (memo.has(key)) return memo.get(key)
+    let found = null
+    for (const len of [2, 1]) {
+      if (i + len > run.length) continue
+      const day = Number(run.slice(i, i + len))
+      if (day <= prev || day > maxDay) continue
+      const rest = best(i + len, day)
+      if (rest && (!found || rest.length + 1 < found.length)) found = [day, ...rest]
+    }
+    memo.set(key, found)
+    return found
+  }
+  return best(0, after)
+}
+
+/**
+ * Read the day numbers out of one week's list. Values that survived OCR
+ * intact are taken as they are; glued runs are split, using the previous
+ * day as a floor so "7,8,9,10,11,1213" continues 12,13.
+ */
+function daysFromList(text, maxDay) {
+  const days = []
+  for (const run of text.match(/\d+/g) || []) {
+    const last = days.length ? days[days.length - 1] : 0
+    const value = Number(run)
+    if (run.length <= 2 && value >= 1 && value <= maxDay) {
+      days.push(value)
+      continue
+    }
+    // Out of range or too long to be one day: OCR glued digits together.
+    // A 2-digit run only splits when it continues the ascending list, so a
+    // day genuinely past the month's end ("29" in February) stays dropped.
+    const pieces =
+      splitRun(run, maxDay, last) || (run.length > 2 ? splitRun(run, maxDay, 0) : null)
+    if (pieces) days.push(...pieces)
+  }
+  return days
+}
 
 /**
  * Text ranges of `cleaned` that no "Week N : ..." match covered, split into
@@ -207,7 +257,7 @@ export function parseWeekDatesFromText(text) {
       // trailing whitespace is part of the match (the day list may wrap to
       // the next line); excluding it keeps the following line unmatched
       end: w.index + w[0].replace(/\s+$/, '').length,
-      days: (w[2].match(/\d{1,2}/g) || []).map(Number).filter((d) => d >= 1 && d <= maxDay),
+      days: daysFromList(w[2], maxDay),
     })
     claim(wk, labelled[labelled.length - 1].days)
   }

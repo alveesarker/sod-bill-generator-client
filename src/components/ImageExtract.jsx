@@ -20,6 +20,9 @@ export default function ImageExtract({ title, hint, onTexts }) {
   const [status, setStatus] = useState(null) // {kind:'ok'|'err', text}
   const [progress, setProgress] = useState(null)
   const [dragging, setDragging] = useState(false)
+  // What the reader actually made of the image. Shown on demand: when a
+  // line comes out wrong, this is the only way to see why.
+  const [readText, setReadText] = useState(null)
 
   const handleFile = async (file) => {
     if (!file || busy) return
@@ -31,6 +34,7 @@ export default function ImageExtract({ title, hint, onTexts }) {
     setBusy(true)
     setStatus(null)
     setProgress(null)
+    setReadText(null)
     setPreview((old) => {
       if (old) URL.revokeObjectURL(old)
       return URL.createObjectURL(file)
@@ -39,6 +43,8 @@ export default function ImageExtract({ title, hint, onTexts }) {
     try {
       const variants = await prepareVariants(file)
       const texts = await recognizeAll(variants, (p) => setProgress(p))
+      // the longest read is the most complete one to show
+      setReadText(texts.reduce((a, b) => (b.length > a.length ? b : a), ''))
       const summary = await onTexts(texts)
       setStatus({ kind: 'ok', text: summary })
     } catch (err) {
@@ -138,6 +144,17 @@ export default function ImageExtract({ title, hint, onTexts }) {
         >
           {status.text}
         </div>
+      )}
+
+      {readText && (
+        <details className="mt-3">
+          <summary className="text-xs text-ink-500 cursor-pointer hover:text-ink-900">
+            What the reader saw
+          </summary>
+          <pre className="mt-2 text-[11px] leading-relaxed text-ink-600 bg-white border border-ink-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+            {readText.trim() || '(nothing legible)'}
+          </pre>
+        </details>
       )}
 
       <p className="mt-3 text-xs text-ink-400">

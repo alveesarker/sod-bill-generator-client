@@ -286,6 +286,29 @@ test('dates: merged variants still give a day to one week only', () => {
   assert.deepEqual(weekDates[2], [8, 9])
 })
 
+test('dates: digits OCR glued together are split back into days', () => {
+  const { weekDates } = parseWeekDatesFromText(
+    'JUNE 2026\nWeek 1:123456\nWeek 2:789,10,11,1213\nWeek 3: 14,1516,17,18,19,20\nWeek 4: 21,22,23,24,25,27'
+  )
+  assert.deepEqual(weekDates[1], [1, 2, 3, 4, 5, 6])
+  assert.deepEqual(weekDates[2], [7, 8, 9, 10, 11, 12, 13])
+  assert.deepEqual(weekDates[3], [14, 15, 16, 17, 18, 19, 20])
+  assert.deepEqual(weekDates[4], [21, 22, 23, 24, 25, 27])
+})
+
+test('dates: a glued run keeps the fewest pieces that still ascend', () => {
+  // 1516 is 15,16 - not 1,5,16
+  assert.deepEqual(parseWeekDatesFromText('Week 1 : 1516').weekDates[1], [15, 16])
+  // 2-digit runs only split when they continue the list, so a real day is
+  // never chopped up: 29 in February is out of range and stays dropped
+  const feb = parseWeekDatesFromText('FEBRUARY 2026 Week 1 : 27,28,29,30').weekDates
+  assert.deepEqual(feb[1], [27, 28])
+  // ...but a 2-digit run past the month end that does continue is split
+  assert.deepEqual(parseWeekDatesFromText('JUNE 2026 Week 1 : 1,2,34,5,6').weekDates[1], [
+    1, 2, 3, 4, 5, 6,
+  ])
+})
+
 test('dates: no week lines in any variant means null result', () => {
   const { weekDates } = parseWeekDatesFromTexts(['random text 12:30', 'nothing here'])
   assert.equal(weekDates, null)
