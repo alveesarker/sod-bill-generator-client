@@ -1,7 +1,11 @@
 // Unit tests for the OCR-text parsers. Pure Node, no framework:
 //   npm test  (from client/)
 import assert from 'node:assert/strict'
-import { parseCoursesFromText, parseWeekDatesFromText } from '../src/lib/scheduleParsers.js'
+import {
+  parseCoursesFromText,
+  parseWeekDatesFromText,
+  parseWeekDatesFromTexts,
+} from '../src/lib/scheduleParsers.js'
 
 let passed = 0
 function test(name, fn) {
@@ -194,6 +198,97 @@ test('dates: days beyond the detected month length are dropped', () => {
   const { month, weekDates } = parseWeekDatesFromText('FEBRUARY 2026 Week 1 : 27,28,29,30')
   assert.equal(month, 2)
   assert.deepEqual(weekDates[1], [27, 28])
+})
+
+// The July 2026 announcement: whatever OCR does to one week's label, the
+// other three anchor it back to its slot.
+const JULY = (weekTwoLabel) => `JULY 2026
+
+Week 1 : 5,6,7,8,9,10,11
+
+${weekTwoLabel} : 12,13,14,15,16,17,18
+
+Week 3 : 19,20,21,22,23,24,25
+
+Week 4 : 26,27,28,29,30,31
+6:51 PM`
+
+test('dates: a week with a mangled label is recovered from its position', () => {
+  for (const label of ['Wook 2', 'Weck 2', 'Week Z', 'Week', 'W33k 2', 'Neek 2']) {
+    const { month, weekDates } = parseWeekDatesFromText(JULY(label))
+    assert.equal(month, 7)
+    assert.deepEqual(weekDates[1], [5, 6, 7, 8, 9, 10, 11], `week 1 with "${label}"`)
+    assert.deepEqual(weekDates[2], [12, 13, 14, 15, 16, 17, 18], `week 2 with "${label}"`)
+    assert.deepEqual(weekDates[3], [19, 20, 21, 22, 23, 24, 25], `week 3 with "${label}"`)
+    assert.deepEqual(weekDates[4], [26, 27, 28, 29, 30, 31], `week 4 with "${label}"`)
+  }
+})
+
+test('dates: a colon glued to the week number is not read as a clock time', () => {
+  const { weekDates } = parseWeekDatesFromText(
+    'JULY 2026\nWeek 1:5,6\nWeek 2:12,13,14\nWeek 3:19,20,21\nWeek 4:26,27'
+  )
+  assert.deepEqual(weekDates[1], [5, 6])
+  assert.deepEqual(weekDates[2], [12, 13, 14])
+  assert.deepEqual(weekDates[3], [19, 20, 21])
+  assert.deepEqual(weekDates[4], [26, 27])
+})
+
+test('dates: the month header is never mistaken for an unlabelled week', () => {
+  const { month, year, weekDates } = parseWeekDatesFromText(
+    'JULY 2026\nWeek 1 : 5,6,7\nWeek 3 : 19,20,21\nWeek 4 : 26,27,28'
+  )
+  assert.equal(month, 7)
+  assert.equal(year, 2026)
+  assert.deepEqual(weekDates[2], []) // nothing to fill it with
+  assert.deepEqual(weekDates[1], [5, 6, 7])
+})
+
+test('dates: a day list only fills a week slot its position allows', () => {
+  // a stray list before week 1 has no open week below it, so it is dropped
+  const { weekDates } = parseWeekDatesFromText('Roster 15,16,17,18\nWeek 1 : 1,2,3\nWeek 2 : 4,5,6')
+  assert.deepEqual(weekDates[1], [1, 2, 3])
+  assert.deepEqual(weekDates[3], [])
+  assert.deepEqual(weekDates[4], [])
+  // ...but a leftover line between weeks 1 and 3 takes the open week 2
+  const gap = parseWeekDatesFromText('Week 1 : 1,2,3\nWeek 3 : 14,15,16').weekDates
+  assert.deepEqual(gap[2], [])
+  const filled = parseWeekDatesFromText('Week 1 : 1,2,3\nRoster 7,8,9\nWeek 3 : 14,15,16').weekDates
+  assert.deepEqual(filled[2], [7, 8, 9])
+})
+
+test('dates: unlabelled lists need a real week label somewhere to be trusted', () => {
+  const { weekDates } = parseWeekDatesFromText('Invoice 12,13,14,15 total 20')
+  assert.equal(weekDates, null)
+})
+
+test('dates: each week takes the OCR variant that read it best', () => {
+  // variant A loses week 2, variant B loses weeks 3 and 4 — neither is
+  // complete, and A alone (17 days) would have won a whole-variant pick
+  const { month, year, weekDates } = parseWeekDatesFromTexts([
+    'JULY 2026\nWeek 1 : 5,6,7,8\nWeek 3 : 19,20,21,22\nWeek 4 : 26,27,28,29,30',
+    'Week 1 : 5,6\nWeek 2 : 12,13,14,15',
+  ])
+  assert.equal(month, 7)
+  assert.equal(year, 2026)
+  assert.deepEqual(weekDates[1], [5, 6, 7, 8])
+  assert.deepEqual(weekDates[2], [12, 13, 14, 15])
+  assert.deepEqual(weekDates[3], [19, 20, 21, 22])
+  assert.deepEqual(weekDates[4], [26, 27, 28, 29, 30])
+})
+
+test('dates: merged variants still give a day to one week only', () => {
+  const { weekDates } = parseWeekDatesFromTexts([
+    'Week 1 : 5,6,7',
+    'Week 2 : 7,8,9', // 7 misread into week 2 by the other variant
+  ])
+  assert.deepEqual(weekDates[1], [5, 6, 7])
+  assert.deepEqual(weekDates[2], [8, 9])
+})
+
+test('dates: no week lines in any variant means null result', () => {
+  const { weekDates } = parseWeekDatesFromTexts(['random text 12:30', 'nothing here'])
+  assert.equal(weekDates, null)
 })
 
 test('dates: no week lines means null result', () => {

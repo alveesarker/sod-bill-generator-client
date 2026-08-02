@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import ImageExtract from './ImageExtract.jsx'
 import { MONTH_NAMES, DAY_NAMES_SHORT, daysInMonth, weekdayOf } from '../lib/format.js'
-import { parseWeekDatesFromText } from '../lib/scheduleParsers.js'
+import { parseWeekDatesFromTexts } from '../lib/scheduleParsers.js'
 import { fetchSharedDates } from '../lib/api.js'
 
 // Visual identity for the four week panels.
@@ -64,27 +64,10 @@ export default function WeekDateSelector({
     : 0
 
   const handleTexts = async (texts) => {
-    // OCR variants fail by LOSING days (glued digits), not inventing them,
-    // so of the variants that parsed at all, keep the one that recovered
-    // the most days. Month/year fall back to any variant that saw them.
-    let best = null
-    let bestCount = -1
-    let month = null
-    let year = null
-    for (const text of texts) {
-      const parsed = parseWeekDatesFromText(text)
-      month = month || parsed.month
-      year = year || parsed.year
-      if (!parsed.weekDates) continue
-      const count = Object.values(parsed.weekDates).reduce((n, arr) => n + arr.length, 0)
-      if (count > bestCount) {
-        best = parsed
-        bestCount = count
-      }
-    }
-    if (best) {
-      return onExtracted({ ...best, month: best.month || month, year: best.year || year })
-    }
+    // Each week takes the variant that read it best (see the parser): one
+    // variant losing a single week no longer loses it for the whole upload.
+    const parsed = parseWeekDatesFromTexts(texts)
+    if (parsed.weekDates) return onExtracted(parsed)
     throw new Error(
       'No "Week 1/2/3/4" lists found. Make sure the message text is readable in the screenshot.'
     )
