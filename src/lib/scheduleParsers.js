@@ -102,11 +102,6 @@ export function parseCoursesFromText(rawText) {
 // Week numbers OCR reads as letters: '1' comes back as I/l/|, '2' as Z.
 const WEEK_INDEX = { 1: 1, I: 1, L: 1, '|': 1, 2: 2, Z: 2, 3: 3, 4: 4 }
 
-// A standalone 1-2 digit number: "2026" stays a year instead of becoming
-// 20 and 26. Used for unlabelled lines only — inside a "Week N :" list,
-// glued digits ("1213") are split by splitRun instead.
-const DAY_RE = /(?<!\d)(\d{1,2})(?!\d)/g
-
 /**
  * Split a run of digits OCR glued together back into days: "1516" -> 15,16
  * and "123456" -> 1,2,3,4,5,6. Days in an announcement ascend, so the
@@ -207,12 +202,21 @@ export function parseWeekDatesFromText(text) {
     .replace(/\+?\d[-\d \t]{6,}\d/g, (run) => {
       const digits = run.replace(/\D/g, '')
       const longest = Math.max(...run.split(/\D+/).map((g) => g.length))
-      return digits.length >= 8 && longest >= 4 ? ' ' : run
+      if (digits.length < 8 || longest < 4) return run
+      // A date list whose commas OCR dropped ("14 1516 17 18 19 20") has a
+      // phone number's digit count and, once days glue together, its long
+      // group too. Days ascend, so a run that segments into an ascending
+      // list of 1-31 values is dates and must survive.
+      return splitRun(digits, 31, 0) ? run : ' '
     })
-    // clock times (colon only: OCR reads some commas as periods). The
-    // lookbehind spares a week label whose colon OCR glued to the number:
-    // in "Week 2:12,13" the "2:12" is a week and its first date, not 2:12 AM.
-    .replace(/(?<!\bweek\s{0,3})\b\d{1,2}:\d{2}\s*(AM|PM)?\b/gi, ' ')
+    // clock times (colon only: OCR reads some commas as periods). An
+    // explicit AM/PM is always a clock. Without one, only strip when no
+    // word sits in front, so a week label whose colon OCR glued to the
+    // first date keeps its number — in "Week 2:12,13" the "2:12" is a week
+    // and its first date, not 2:12 AM. The lookbehind matches any word so
+    // that a misread label ("Wook 2:12", "Weck 3:14") is spared too.
+    .replace(/\b\d{1,2}:\d{2}\s*(AM|PM)\b/gi, ' ')
+    .replace(/(?<![A-Za-z][ \t]{0,3})\b\d{1,2}:\d{2}(?!\d)\b/g, ' ')
 
   // month + year, full names or 3-letter abbreviations
   let month = null
@@ -250,22 +254,51 @@ export function parseWeekDatesFromText(text) {
   const weekRe = /week\s*[.:#-]?\s*([1-4ILZ|])(?!\d)\s*[:;=.-]*\s*([\d\s,.;|]+)/gi
   let w
   while ((w = weekRe.exec(cleaned)) !== null) {
-    const wk = WEEK_INDEX[w[1].toUpperCase()]
     labelled.push({
-      week: wk,
+      week: WEEK_INDEX[w[1].toUpperCase()],
       start: w.index,
       // trailing whitespace is part of the match (the day list may wrap to
       // the next line); excluding it keeps the following line unmatched
       end: w.index + w[0].replace(/\s+$/, '').length,
-      days: daysFromList(w[2], maxDay),
+      body: w[2],
     })
-    claim(wk, labelled[labelled.length - 1].days)
   }
+
+  const openWeeks = [1, 2, 3, 4].filter((wk) => !labelled.some((l) => l.week === wk))
+
+  // The day list is allowed to run past a line break because it may wrap,
+  // which means a match also swallows the NEXT week's dates whenever OCR
+  // dropped that week's label — leaving the week empty and no leftover
+  // line for pass 2 to find. Hand a swallowed line back: a following line
+  // that is a full run of days of its own, under a label line that was
+  // already complete, belongs to the first week left open before the next
+  // label. A genuine wrap is the short remainder of one list, so requiring
+  // a complete line on both sides keeps wraps joined.
+  const claims = []
+  for (let i = 0; i < labelled.length; i++) {
+    const l = labelled[i]
+    const nextWeek = i + 1 < labelled.length ? labelled[i + 1].week : 5
+    const lines = l.body.split('\n')
+    let own = lines[0]
+    const extras = []
+    for (const line of lines.slice(1)) {
+      const days = daysFromList(line, maxDay)
+      const slot = openWeeks.findIndex((wk) => wk > l.week && wk < nextWeek)
+      if (days.length >= 4 && slot !== -1 && daysFromList(own, maxDay).length >= 3) {
+        extras.push({ week: openWeeks[slot], days })
+        openWeeks.splice(slot, 1)
+      } else {
+        own += ` ${line}`
+      }
+    }
+    l.days = daysFromList(own, maxDay)
+    claims.push({ week: l.week, days: l.days }, ...extras)
+  }
+  for (const c of claims) claim(c.week, c.days)
 
   // pass 2: a week whose label OCR mangled shows up as a leftover line of
   // bare days. Only trusted alongside labels that did parse — without that
   // anchor any numeric line in a wrong screenshot would become week 1.
-  const openWeeks = [1, 2, 3, 4].filter((wk) => !labelled.some((l) => l.week === wk))
   if (labelled.length > 0 && openWeeks.length > 0) {
     for (const line of unmatchedLines(cleaned, labelled)) {
       if (openWeeks.length === 0) break
@@ -280,9 +313,11 @@ export function parseWeekDatesFromText(text) {
           ? line.text.slice(sep + 1)
           : line.text
 
-      const days = (body.match(DAY_RE) || [])
-        .map(Number)
-        .filter((d) => d >= 1 && d <= maxDay)
+      // daysFromList, not a bare scan: a recovered line suffers the same
+      // glued digits as a labelled one ("14,1516,17" -> 14,15,16,17), and
+      // dropping them silently lost days from the recovered week. Lines
+      // carrying a year were skipped above, so nothing splits "2026".
+      const days = daysFromList(body, maxDay)
       // a real week line is a run of days; two stray numbers are not enough
       if (days.length < 3) continue
       const fresh = days.filter((d) => !assigned.has(d))
